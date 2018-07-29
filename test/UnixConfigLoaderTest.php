@@ -6,14 +6,14 @@ use Amp\Dns\Config;
 use Amp\Dns\ConfigException;
 use Amp\Dns\UnixConfigLoader;
 use Amp\PHPUnit\TestCase;
-use function Amp\Promise\wait;
 
 class UnixConfigLoaderTest extends TestCase {
-    public function test() {
+    public function test(): void
+    {
         $loader = new UnixConfigLoader(__DIR__ . "/data/resolv.conf");
 
         /** @var Config $result */
-        $result = wait($loader->loadConfig());
+        $result = $loader->loadConfig();
 
         $this->assertSame([
             "127.0.0.1:53",
@@ -24,8 +24,9 @@ class UnixConfigLoaderTest extends TestCase {
         $this->assertSame(3, $result->getAttempts());
     }
 
-    public function testNoDefaultsOnConfNotFound() {
+    public function testNoDefaultsOnConfNotFound(): void
+    {
         $this->expectException(ConfigException::class);
-        wait((new UnixConfigLoader(__DIR__ . "/data/non-existent.conf"))->loadConfig());
+        (new UnixConfigLoader(__DIR__ . "/data/non-existent.conf"))->loadConfig();
     }
 }

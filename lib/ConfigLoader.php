@@ -2,8 +2,12 @@
 
 namespace Amp\Dns;
 
-use Amp\Promise;
-
-interface ConfigLoader {
-    public function loadConfig(): Promise;
+interface ConfigLoader
+{
+    /**
+     * @return Config
+     *
+     * @throws ConfigException
+     */
+    public function loadConfig(): Config;
 }

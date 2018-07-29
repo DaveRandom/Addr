@@ -2,5 +2,6 @@
 
 namespace Amp\Dns;
 
-class InvalidNameError extends \Error {
+class InvalidNameError extends \Error
+{
 }

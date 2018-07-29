@@ -2,5 +2,6 @@
 
 namespace Amp\Dns;
 
-class TimeoutException extends ResolutionException {
+class TimeoutException extends ResolutionException
+{
 }

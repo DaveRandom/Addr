@@ -3,16 +3,17 @@
 namespace Amp\Dns\Test;
 
 use Amp\Dns;
-use Amp\Promise;
-use function Amp\Promise\wait;
 
-class UdpSocketTest extends SocketTest {
-    protected function connect(): Promise {
+class UdpSocketTest extends SocketTest
+{
+    protected function connect(): Dns\Internal\Socket
+    {
         return Dns\Internal\UdpSocket::connect("udp://8.8.8.8:53");
     }
 
-    public function testInvalidUri() {
+    public function testInvalidUri(): void
+    {
         $this->expectException(Dns\ResolutionException::class);
-        wait(Dns\Internal\UdpSocket::connect("udp://8.8.8.8"));
+        Dns\Internal\UdpSocket::connect("udp://8.8.8.8");
     }
 }

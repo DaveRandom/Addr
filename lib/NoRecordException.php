@@ -2,5 +2,6 @@
 
 namespace Amp\Dns;
 
-class NoRecordException extends ResolutionException {
+class NoRecordException extends ResolutionException
+{
 }

@@ -6,19 +6,20 @@ use Amp;
 use Amp\ByteStream\ResourceInputStream;
 use Amp\ByteStream\ResourceOutputStream;
 use Amp\ByteStream\StreamException;
-use Amp\Deferred;
 use Amp\Dns\ResolutionException;
 use Amp\Dns\TimeoutException;
-use Amp\Promise;
+use Concurrent\Deferred;
+use Concurrent\Task;
 use LibDNS\Messages\Message;
 use LibDNS\Messages\MessageFactory;
 use LibDNS\Messages\MessageTypes;
 use LibDNS\Records\Question;
-use function Amp\call;
+use function Amp\timeout;
 
 /** @internal */
-abstract class Socket {
-    const MAX_CONCURRENT_REQUESTS = 500;
+abstract class Socket
+{
+    private const MAX_CONCURRENT_REQUESTS = 500;
 
     /** @var ResourceInputStream */
     private $input;
@@ -47,147 +48,121 @@ abstract class Socket {
     /**
      * @param string $uri
      *
-     * @return Promise<\Amp\Dns\Server>
+     * @return Socket
+     *
+     * @throws ResolutionException
      */
-    abstract public static function connect(string $uri): Promise;
+    abstract public static function connect(string $uri): Socket;
 
     /**
      * @param Message $message
      *
-     * @return Promise<int>
+     * @throws StreamException
      */
-    abstract protected function send(Message $message): Promise;
+    abstract protected function send(Message $message): void;
 
     /**
-     * @return Promise<Message>
+     * @return Message
+     *
+     * @throws StreamException
      */
-    abstract protected function receive(): Promise;
+    abstract protected function receive(): Message;
 
     /**
      * @return bool
      */
     abstract public function isAlive(): bool;
 
-    public function getLastActivity(): int {
+    public function getLastActivity(): int
+    {
         return $this->lastActivity;
     }
 
-    protected function __construct($socket) {
+    protected function __construct($socket)
+    {
         $this->input = new ResourceInputStream($socket);
         $this->output = new ResourceOutputStream($socket);
         $this->messageFactory = new MessageFactory;
         $this->lastActivity = \time();
-
-        $this->onResolve = function (\Throwable $exception = null, Message $message = null) {
-            $this->lastActivity = \time();
-            $this->receiving = false;
-
-            if ($exception) {
-                $this->error($exception);
-                return;
-            }
-
-            $id = $message->getId();
-
-            // Ignore duplicate and invalid responses.
-            if (isset($this->pending[$id]) && $this->matchesQuestion($message, $this->pending[$id]->question)) {
-                /** @var Deferred $deferred */
-                $deferred = $this->pending[$id]->deferred;
-                unset($this->pending[$id]);
-                $deferred->resolve($message);
-            }
-
-            if (empty($this->pending)) {
-                $this->input->unreference();
-            } elseif (!$this->receiving) {
-                $this->input->reference();
-                $this->receiving = true;
-                $this->receive()->onResolve($this->onResolve);
-            }
-        };
     }
 
     /**
-     * @param \LibDNS\Records\Question $question
-     * @param int $timeout
+     * @param Question $question
+     * @param int      $timeout
      *
-     * @return \Amp\Promise<\LibDNS\Messages\Message>
+     * @return Message
      */
-    public function ask(Question $question, int $timeout): Promise {
-        return call(function () use ($question, $timeout) {
-            $this->lastActivity = \time();
+    public function ask(Question $question, int $timeout): Message
+    {
+        $this->lastActivity = \time();
 
-            if (\count($this->pending) > self::MAX_CONCURRENT_REQUESTS) {
-                $deferred = new Deferred;
-                $this->queue[] = $deferred;
-                yield $deferred->promise();
-            }
-
-            do {
-                $id = \random_int(0, 0xffff);
-            } while (isset($this->pending[$id]));
-
-            $message = $this->createMessage($question, $id);
-
-            try {
-                yield $this->send($message);
-            } catch (StreamException $exception) {
-                $exception = new ResolutionException("Sending the request failed", 0, $exception);
-                $this->error($exception);
-                throw $exception;
-            }
-
+        if (\count($this->pending) > self::MAX_CONCURRENT_REQUESTS) {
             $deferred = new Deferred;
-            $pending = new class {
-                use Amp\Struct;
+            $this->queue[] = $deferred;
+            Task::await($deferred->awaitable());
+        }
 
-                public $deferred;
-                public $question;
-            };
+        do {
+            $id = \random_int(0, 0xffff);
+        } while (isset($this->pending[$id]));
 
-            $pending->deferred = $deferred;
-            $pending->question = $question;
-            $this->pending[$id] = $pending;
+        $message = $this->createMessage($question, $id);
 
-            $this->input->reference();
+        try {
+            $this->send($message);
+        } catch (StreamException $exception) {
+            $exception = new ResolutionException("Sending the request failed", 0, $exception);
+            $this->error($exception);
 
-            if (!$this->receiving) {
-                $this->receiving = true;
-                $this->receive()->onResolve($this->onResolve);
+            throw $exception;
+        }
+
+        $deferred = new Deferred;
+        $pending = new class
+        {
+            use Amp\Struct;
+
+            public $deferred;
+            public $question;
+        };
+
+        $pending->deferred = $deferred;
+        $pending->question = $question;
+        $this->pending[$id] = $pending;
+
+        $this->input->reference();
+
+        if (!$this->receiving) {
+            $this->receiving = true;
+            Task::async(\Closure::fromCallable([$this, 'receiveIncomingMessages']));
+        }
+
+        try {
+            return Task::await(timeout($deferred->awaitable(), $timeout));
+        } catch (Amp\TimeoutException $exception) {
+            unset($this->pending[$id]);
+
+            if (empty($this->pending)) {
+                $this->input->unreference();
             }
 
-            try {
-                // Work around an OPCache issue that returns an empty array with "return yield ...",
-                // so assign to a variable first and return after the try block.
-                //
-                // See https://github.com/amphp/dns/issues/58.
-                // See https://bugs.php.net/bug.php?id=74840.
-                $result = yield Promise\timeout($deferred->promise(), $timeout);
-            } catch (Amp\TimeoutException $exception) {
-                unset($this->pending[$id]);
-
-                if (empty($this->pending)) {
-                    $this->input->unreference();
-                }
-
-                throw new TimeoutException("Didn't receive a response within {$timeout} milliseconds.");
-            } finally {
-                if ($this->queue) {
-                    $deferred = array_shift($this->queue);
-                    $deferred->resolve();
-                }
+            throw new TimeoutException("Didn't receive a response within {$timeout} milliseconds.");
+        } finally {
+            if ($this->queue) {
+                $deferred = array_shift($this->queue);
+                $deferred->resolve();
             }
-
-            return $result;
-        });
+        }
     }
 
-    public function close() {
+    public function close(): void
+    {
         $this->input->close();
         $this->output->close();
     }
 
-    private function error(\Throwable $exception) {
+    private function error(\Throwable $exception): void
+    {
         $this->close();
 
         if (empty($this->pending)) {
@@ -209,23 +184,60 @@ abstract class Socket {
         }
     }
 
-    protected function read(): Promise {
+    /** @throws StreamException */
+    protected function read(): ?string
+    {
         return $this->input->read();
     }
 
-    protected function write(string $data): Promise {
-        return $this->output->write($data);
+    /** @throws StreamException */
+    protected function write(string $data): void
+    {
+        $this->output->write($data);
     }
 
-    protected function createMessage(Question $question, int $id): Message {
+    protected function createMessage(Question $question, int $id): Message
+    {
         $request = $this->messageFactory->create(MessageTypes::QUERY);
         $request->getQuestionRecords()->add($question);
         $request->isRecursionDesired(true);
         $request->setID($id);
+
         return $request;
     }
 
-    private function matchesQuestion(Message $message, Question $question): bool {
+    private function receiveIncomingMessages(): void
+    {
+        $this->lastActivity = \time();
+        $this->input->reference();
+
+        while ($this->receiving) {
+            try {
+                $message = $this->receive();
+            } catch (StreamException $exception) {
+                $this->error($exception);
+                return;
+            }
+
+            $id = $message->getID();
+
+            // Ignore duplicate and invalid responses.
+            if (isset($this->pending[$id]) && $this->matchesQuestion($message, $this->pending[$id]->question)) {
+                /** @var Deferred $deferred */
+                $deferred = $this->pending[$id]->deferred;
+                unset($this->pending[$id]);
+                $deferred->resolve($message);
+            }
+
+            if (empty($this->pending)) {
+                $this->input->unreference();
+                $this->receiving = false;
+            }
+        }
+    }
+
+    private function matchesQuestion(Message $message, Question $question): bool
+    {
         if ($message->getType() !== MessageTypes::RESPONSE) {
             return false;
         }

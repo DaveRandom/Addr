@@ -5,75 +5,83 @@ namespace Amp\Dns;
 use LibDNS\Records\ResourceQTypes;
 use LibDNS\Records\ResourceTypes;
 
-final class Record {
-    const A = ResourceTypes::A;
-    const AAAA = ResourceTypes::AAAA;
-    const AFSDB = ResourceTypes::AFSDB;
-    // const APL = ResourceTypes::APL;
-    const CAA = ResourceTypes::CAA;
-    const CERT = ResourceTypes::CERT;
-    const CNAME = ResourceTypes::CNAME;
-    const DHCID = ResourceTypes::DHCID;
-    const DLV = ResourceTypes::DLV;
-    const DNAME = ResourceTypes::DNAME;
-    const DNSKEY = ResourceTypes::DNSKEY;
-    const DS = ResourceTypes::DS;
-    const HINFO = ResourceTypes::HINFO;
-    // const HIP = ResourceTypes::HIP;
-    // const IPSECKEY = ResourceTypes::IPSECKEY;
-    const KEY = ResourceTypes::KEY;
-    const KX = ResourceTypes::KX;
-    const ISDN = ResourceTypes::ISDN;
-    const LOC = ResourceTypes::LOC;
-    const MB = ResourceTypes::MB;
-    const MD = ResourceTypes::MD;
-    const MF = ResourceTypes::MF;
-    const MG = ResourceTypes::MG;
-    const MINFO = ResourceTypes::MINFO;
-    const MR = ResourceTypes::MR;
-    const MX = ResourceTypes::MX;
-    const NAPTR = ResourceTypes::NAPTR;
-    const NS = ResourceTypes::NS;
-    // const NSEC = ResourceTypes::NSEC;
-    // const NSEC3 = ResourceTypes::NSEC3;
-    // const NSEC3PARAM = ResourceTypes::NSEC3PARAM;
-    const NULL = ResourceTypes::NULL;
-    const PTR = ResourceTypes::PTR;
-    const RP = ResourceTypes::RP;
-    // const RRSIG = ResourceTypes::RRSIG;
-    const RT = ResourceTypes::RT;
-    const SIG = ResourceTypes::SIG;
-    const SOA = ResourceTypes::SOA;
-    const SPF = ResourceTypes::SPF;
-    const SRV = ResourceTypes::SRV;
-    const TXT = ResourceTypes::TXT;
-    const WKS = ResourceTypes::WKS;
-    const X25 = ResourceTypes::X25;
+final class Record
+{
+    public const A = ResourceTypes::A;
+    public const AAAA = ResourceTypes::AAAA;
+    public const AFSDB = ResourceTypes::AFSDB;
+    // public const APL = ResourceTypes::APL;
+    public const CAA = ResourceTypes::CAA;
+    public const CERT = ResourceTypes::CERT;
+    public const CNAME = ResourceTypes::CNAME;
+    public const DHCID = ResourceTypes::DHCID;
+    public const DLV = ResourceTypes::DLV;
+    public const DNAME = ResourceTypes::DNAME;
+    public const DNSKEY = ResourceTypes::DNSKEY;
+    public const DS = ResourceTypes::DS;
+    public const HINFO = ResourceTypes::HINFO;
+    // public const HIP = ResourceTypes::HIP;
+    // public const IPSECKEY = ResourceTypes::IPSECKEY;
+    public const KEY = ResourceTypes::KEY;
+    public const KX = ResourceTypes::KX;
+    public const ISDN = ResourceTypes::ISDN;
+    public const LOC = ResourceTypes::LOC;
+    public const MB = ResourceTypes::MB;
+    public const MD = ResourceTypes::MD;
+    public const MF = ResourceTypes::MF;
+    public const MG = ResourceTypes::MG;
+    public const MINFO = ResourceTypes::MINFO;
+    public const MR = ResourceTypes::MR;
+    public const MX = ResourceTypes::MX;
+    public const NAPTR = ResourceTypes::NAPTR;
+    public const NS = ResourceTypes::NS;
+    // public const NSEC = ResourceTypes::NSEC;
+    // public const NSEC3 = ResourceTypes::NSEC3;
+    // public const NSEC3PARAM = ResourceTypes::NSEC3PARAM;
+    public const NULL = ResourceTypes::NULL;
+    public const PTR = ResourceTypes::PTR;
+    public const RP = ResourceTypes::RP;
+    // public const RRSIG = ResourceTypes::RRSIG;
+    public const RT = ResourceTypes::RT;
+    public const SIG = ResourceTypes::SIG;
+    public const SOA = ResourceTypes::SOA;
+    public const SPF = ResourceTypes::SPF;
+    public const SRV = ResourceTypes::SRV;
+    public const TXT = ResourceTypes::TXT;
+    public const WKS = ResourceTypes::WKS;
+    public const X25 = ResourceTypes::X25;
 
-    const AXFR = ResourceQTypes::AXFR;
-    const MAILB = ResourceQTypes::MAILB;
-    const MAILA = ResourceQTypes::MAILA;
-    const ALL = ResourceQTypes::ALL;
+    public const AXFR = ResourceQTypes::AXFR;
+    public const MAILB = ResourceQTypes::MAILB;
+    public const MAILA = ResourceQTypes::MAILA;
+    public const ALL = ResourceQTypes::ALL;
 
+    /** @var string */
     private $value;
+    /** @var int */
     private $type;
+    /** @var int|null */
     private $ttl;
 
-    public function __construct(string $value, int $type, int $ttl = null) {
+    public function __construct(string $value, int $type, int $ttl = null)
+    {
         $this->value = $value;
         $this->type = $type;
         $this->ttl = $ttl;
     }
 
-    public function getValue(): string {
+    public function getValue(): string
+    {
         return $this->value;
     }
 
-    public function getType(): int {
+    public function getType(): int
+    {
         return $this->type;
     }
 
-    public function getTtl() {
+    public function getTtl(): ?int
+    {
         return $this->ttl;
     }
 
@@ -86,7 +94,8 @@ final class Record {
      *
      * @return string Name of the constant for this record in this class.
      */
-    public static function getName(int $type): string {
+    public static function getName(int $type): string
+    {
         static $types;
 
         if (0 > $type || 0xffff < $type) {
@@ -95,10 +104,7 @@ final class Record {
         }
 
         if ($types === null) {
-            $types = \array_flip(
-                (new \ReflectionClass(self::class))
-                    ->getConstants()
-            );
+            $types = \array_flip((new \ReflectionClass(self::class))->getConstants());
         }
 
         return $types[$type] ?? "unknown ({$type})";

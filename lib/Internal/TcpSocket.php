@@ -3,21 +3,22 @@
 namespace Amp\Dns\Internal;
 
 use Amp;
-use Amp\Deferred;
 use Amp\Dns\ResolutionException;
 use Amp\Dns\TimeoutException;
 use Amp\Loop;
 use Amp\Parser\Parser;
-use Amp\Promise;
-use Amp\Success;
+use Concurrent\Deferred;
+use Concurrent\Task;
 use LibDNS\Decoder\DecoderFactory;
+use LibDNS\Encoder\Encoder;
 use LibDNS\Encoder\EncoderFactory;
 use LibDNS\Messages\Message;
-use function Amp\call;
+use function Amp\timeout;
 
 /** @internal */
-class TcpSocket extends Socket {
-    /** @var \LibDNS\Encoder\Encoder */
+class TcpSocket extends Socket
+{
+    /** @var Encoder */
     private $encoder;
 
     /** @var \SplQueue */
@@ -29,7 +30,8 @@ class TcpSocket extends Socket {
     /** @var bool */
     private $isAlive = true;
 
-    public static function connect(string $uri, int $timeout = 5000): Promise {
+    public static function connect(string $uri, int $timeout = 5000): Socket
+    {
         if (!$socket = @\stream_socket_client($uri, $errno, $errstr, 0, STREAM_CLIENT_ASYNC_CONNECT)) {
             throw new ResolutionException(\sprintf(
                 "Connection to %s failed: [Error #%d] %s",
@@ -41,24 +43,23 @@ class TcpSocket extends Socket {
 
         \stream_set_blocking($socket, false);
 
-        return call(function () use ($uri, $socket, $timeout) {
-            $deferred = new Deferred;
+        $deferred = new Deferred;
 
-            $watcher = Loop::onWritable($socket, static function () use ($socket, $deferred) {
-                $deferred->resolve(new self($socket));
-            });
-
-            try {
-                return yield Promise\timeout($deferred->promise(), $timeout);
-            } catch (Amp\TimeoutException $e) {
-                throw new TimeoutException("Name resolution timed out, could not connect to server at $uri");
-            } finally {
-                Loop::cancel($watcher);
-            }
+        $watcher = Loop::onWritable($socket, static function () use ($socket, $deferred) {
+            $deferred->resolve(new self($socket));
         });
+
+        try {
+            return Task::await(timeout($deferred->awaitable(), $timeout));
+        } catch (Amp\TimeoutException $e) {
+            throw new TimeoutException("Name resolution timed out, could not connect to server at $uri");
+        } finally {
+            Loop::cancel($watcher);
+        }
     }
 
-    public static function parser(callable $callback): \Generator {
+    public static function parser(callable $callback): \Generator
+    {
         $decoder = (new DecoderFactory)->create();
 
         while (true) {
@@ -70,7 +71,8 @@ class TcpSocket extends Socket {
         }
     }
 
-    protected function __construct($socket) {
+    protected function __construct($socket)
+    {
         parent::__construct($socket);
 
         $this->encoder = (new EncoderFactory)->create();
@@ -78,40 +80,37 @@ class TcpSocket extends Socket {
         $this->parser = new Parser(self::parser([$this->queue, 'push']));
     }
 
-    protected function send(Message $message): Promise {
+    protected function send(Message $message): void
+    {
         $data = $this->encoder->encode($message);
-        $promise = $this->write(\pack("n", \strlen($data)) . $data);
-        $promise->onResolve(function ($error) {
-            if ($error) {
-                $this->isAlive = false;
-            }
-        });
 
-        return $promise;
+        try {
+            $this->write(\pack("n", \strlen($data)) . $data);
+        } catch (\Throwable $exception) {
+            $this->isAlive = false;
+
+            throw $exception;
+        }
     }
 
-    protected function receive(): Promise {
-        if ($this->queue->isEmpty()) {
-            return call(function () {
-                do {
-                    $chunk = yield $this->read();
+    protected function receive(): Message
+    {
+        while ($this->queue->isEmpty()) {
+            $chunk = $this->read();
 
-                    if ($chunk === null) {
-                        $this->isAlive = false;
-                        throw new ResolutionException("Reading from the server failed");
-                    }
+            if ($chunk === null) {
+                $this->isAlive = false;
+                throw new ResolutionException("Reading from the server failed");
+            }
 
-                    $this->parser->push($chunk);
-                } while ($this->queue->isEmpty());
-
-                return $this->queue->shift();
-            });
+            $this->parser->push($chunk);
         }
 
-        return new Success($this->queue->shift());
+        return $this->queue->shift();
     }
 
-    public function isAlive(): bool {
+    public function isAlive(): bool
+    {
         return $this->isAlive;
     }
 }
