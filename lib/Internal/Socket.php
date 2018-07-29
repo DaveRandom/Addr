@@ -134,7 +134,7 @@ abstract class Socket
 
         if (!$this->receiving) {
             $this->receiving = true;
-            Task::async(\Closure::fromCallable([$this, 'receiveIncomingMessages']));
+            Amp\rethrow(Task::async(\Closure::fromCallable([$this, 'receiveIncomingMessages'])));
         }
 
         try {
@@ -214,7 +214,7 @@ abstract class Socket
         while ($this->receiving) {
             try {
                 $message = $this->receive();
-            } catch (StreamException $exception) {
+            } catch (\Throwable $exception) {
                 $this->error($exception);
                 return;
             }
