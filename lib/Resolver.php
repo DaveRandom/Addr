@@ -14,7 +14,7 @@ interface Resolver
      *
      * @return Record[]
      *
-     * @throws ResolutionException
+     * @throws DnsException
      */
     public function resolve(string $name, int $typeRestriction = null): array;
 
@@ -26,7 +26,7 @@ interface Resolver
      *
      * @return Record[]
      *
-     * @throws ResolutionException
+     * @throws DnsException
      */
     public function query(string $name, int $type): array;
 }

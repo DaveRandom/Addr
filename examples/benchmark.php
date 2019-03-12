@@ -24,7 +24,7 @@ for ($i = 0; $i < 10; $i++) {
 
     try {
         pretty_print_records($domain, Dns\resolve($domain));
-    } catch (Dns\ResolutionException $e) {
+    } catch (Dns\DnsException $e) {
         pretty_print_error($domain, $e);
     }
 

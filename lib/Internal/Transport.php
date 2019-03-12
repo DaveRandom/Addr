@@ -3,10 +3,7 @@
 namespace Amp\Dns\Internal;
 
 use Amp;
-use Amp\ByteStream\ResourceInputStream;
-use Amp\ByteStream\ResourceOutputStream;
-use Amp\ByteStream\StreamException;
-use Amp\Dns\ResolutionException;
+use Amp\Dns\DnsException;
 use Amp\Dns\TimeoutException;
 use Concurrent\Deferred;
 use Concurrent\Task;
@@ -17,24 +14,15 @@ use LibDNS\Records\Question;
 use function Amp\timeout;
 
 /** @internal */
-abstract class Socket
+abstract class Transport
 {
     private const MAX_CONCURRENT_REQUESTS = 500;
-
-    /** @var ResourceInputStream */
-    private $input;
-
-    /** @var ResourceOutputStream */
-    private $output;
 
     /** @var array Contains already sent queries with no response yet. For UDP this is exactly zero or one item. */
     private $pending = [];
 
     /** @var MessageFactory */
     private $messageFactory;
-
-    /** @var callable */
-    private $onResolve;
 
     /** @var int Used for determining whether the socket can be garbage collected, because it's inactive. */
     private $lastActivity;
@@ -48,23 +36,23 @@ abstract class Socket
     /**
      * @param string $uri
      *
-     * @return Socket
+     * @return Transport
      *
-     * @throws ResolutionException
+     * @throws DnsException
      */
-    abstract public static function connect(string $uri): Socket;
+    abstract public static function createFromUri(string $uri): Transport;
 
     /**
      * @param Message $message
      *
-     * @throws StreamException
+     * @throws DnsException
      */
     abstract protected function send(Message $message): void;
 
     /**
      * @return Message
      *
-     * @throws StreamException
+     * @throws DnsException
      */
     abstract protected function receive(): Message;
 
@@ -78,10 +66,8 @@ abstract class Socket
         return $this->lastActivity;
     }
 
-    protected function __construct($socket)
+    protected function __construct()
     {
-        $this->input = new ResourceInputStream($socket);
-        $this->output = new ResourceOutputStream($socket);
         $this->messageFactory = new MessageFactory;
         $this->lastActivity = \time();
     }
@@ -110,8 +96,7 @@ abstract class Socket
 
         try {
             $this->send($message);
-        } catch (StreamException $exception) {
-            $exception = new ResolutionException("Sending the request failed", 0, $exception);
+        } catch (DnsException $exception) {
             $this->error($exception);
 
             throw $exception;
@@ -130,8 +115,6 @@ abstract class Socket
         $pending->question = $question;
         $this->pending[$id] = $pending;
 
-        $this->input->reference();
-
         if (!$this->receiving) {
             $this->receiving = true;
             Amp\rethrow(Task::async(\Closure::fromCallable([$this, 'receiveIncomingMessages'])));
@@ -142,11 +125,7 @@ abstract class Socket
         } catch (Amp\TimeoutException $exception) {
             unset($this->pending[$id]);
 
-            if (empty($this->pending)) {
-                $this->input->unreference();
-            }
-
-            throw new TimeoutException("Didn't receive a response within {$timeout} milliseconds.");
+            throw new TimeoutException("Didn't receive a response for '{$question->getName()}' within {$timeout} milliseconds.");
         } finally {
             if ($this->queue) {
                 $deferred = array_shift($this->queue);
@@ -155,11 +134,7 @@ abstract class Socket
         }
     }
 
-    public function close(): void
-    {
-        $this->input->close();
-        $this->output->close();
-    }
+    abstract public function close(): void;
 
     private function error(\Throwable $exception): void
     {
@@ -169,9 +144,9 @@ abstract class Socket
             return;
         }
 
-        if (!$exception instanceof ResolutionException) {
+        if (!$exception instanceof DnsException) {
             $message = "Unexpected error during resolution: " . $exception->getMessage();
-            $exception = new ResolutionException($message, 0, $exception);
+            $exception = new DnsException($message, 0, $exception);
         }
 
         $pending = $this->pending;
@@ -184,17 +159,17 @@ abstract class Socket
         }
     }
 
-    /** @throws StreamException */
-    protected function read(): ?string
-    {
-        return $this->input->read();
-    }
+    /**
+     * @throws DnsException
+     */
+    abstract protected function read(): ?string;
 
-    /** @throws StreamException */
-    protected function write(string $data): void
-    {
-        $this->output->write($data);
-    }
+    /**
+     * @param string $data
+     *
+     * @throws DnsException
+     */
+    abstract protected function write(string $data): void;
 
     protected function createMessage(Question $question, int $id): Message
     {
@@ -209,7 +184,6 @@ abstract class Socket
     private function receiveIncomingMessages(): void
     {
         $this->lastActivity = \time();
-        $this->input->reference();
 
         while ($this->receiving) {
             try {
@@ -230,7 +204,6 @@ abstract class Socket
             }
 
             if (empty($this->pending)) {
-                $this->input->unreference();
                 $this->receiving = false;
             }
         }

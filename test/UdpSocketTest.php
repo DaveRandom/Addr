@@ -6,14 +6,14 @@ use Amp\Dns;
 
 class UdpSocketTest extends SocketTest
 {
-    protected function connect(): Dns\Internal\Socket
+    protected function connect(): Dns\Internal\Transport
     {
-        return Dns\Internal\UdpSocket::connect("udp://8.8.8.8:53");
+        return Dns\Internal\UdpTransport::connect("udp://8.8.8.8:53");
     }
 
     public function testInvalidUri(): void
     {
-        $this->expectException(Dns\ResolutionException::class);
-        Dns\Internal\UdpSocket::connect("udp://8.8.8.8");
+        $this->expectException(Dns\DnsException::class);
+        Dns\Internal\UdpTransport::connect("udp://8.8.8.8");
     }
 }

@@ -4,9 +4,9 @@ namespace Amp\Dns;
 
 use Amp\Cache\ArrayCache;
 use Amp\Cache\Cache;
-use Amp\Dns\Internal\Socket;
-use Amp\Dns\Internal\TcpSocket;
-use Amp\Dns\Internal\UdpSocket;
+use Amp\Dns\Internal\Transport;
+use Amp\Dns\Internal\TcpTransport;
+use Amp\Dns\Internal\UdpTransport;
 use Amp\Loop;
 use Amp\MultiReasonException;
 use Amp\Uri\InvalidDnsNameException;
@@ -20,7 +20,7 @@ use LibDNS\Records\Resource;
 use function Amp\some;
 use function Amp\Uri\normalizeDnsName;
 
-final class BasicResolver implements Resolver
+final class Rfc1035Resolver implements Resolver
 {
     private const CACHE_PREFIX = "amphp.dns.";
 
@@ -39,7 +39,7 @@ final class BasicResolver implements Resolver
     /** @var Cache */
     private $cache;
 
-    /** @var Socket[] */
+    /** @var Transport[] */
     private $sockets = [];
 
     /** @var Awaitable[] */
@@ -102,7 +102,7 @@ final class BasicResolver implements Resolver
                 }
 
                 if (filter_var($name, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-                    throw new ResolutionException("Got an IPv6 address, but type is restricted to IPv4");
+                    throw new DnsException("Got an IPv6 address, but type is restricted to IPv4");
                 }
 
                 break;
@@ -112,7 +112,7 @@ final class BasicResolver implements Resolver
                 }
 
                 if (filter_var($name, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                    throw new ResolutionException("Got an IPv4 address, but type is restricted to IPv6");
+                    throw new DnsException("Got an IPv4 address, but type is restricted to IPv6");
                 }
 
                 break;
@@ -131,7 +131,7 @@ final class BasicResolver implements Resolver
         try {
             $name = normalizeDnsName($name);
         } catch (InvalidDnsNameException $e) {
-            throw new ResolutionException("Invalid DNS name: {$name}", 0, $e);
+            throw new DnsException("Invalid DNS name: {$name}", 0, $e);
         }
 
         if ($records = $this->queryHosts($name, $typeRestriction)) {
@@ -163,7 +163,7 @@ final class BasicResolver implements Resolver
                             $errors[] = $reason->getMessage();
                         }
 
-                        throw new ResolutionException("All query attempts failed for {$name}: " . \implode(", ", $errors), 0, $e);
+                        throw new DnsException("All query attempts failed for {$name}: " . \implode(", ", $errors), 0, $e);
                     }
                 }
             } catch (NoRecordException $e) {
@@ -229,7 +229,7 @@ final class BasicResolver implements Resolver
             $protocol = "udp";
             $attempt = 0;
 
-            /** @var Socket $socket */
+            /** @var Transport $socket */
             $uri = $protocol . "://" . $nameservers[0];
             $socket = $this->getSocket($uri);
 
@@ -241,7 +241,7 @@ final class BasicResolver implements Resolver
                         unset($this->sockets[$uri]);
                         $socket->close();
 
-                        /** @var Socket $server */
+                        /** @var Transport $server */
                         $i = $attempt % \count($nameservers);
                         $uri = $protocol . "://" . $nameservers[$i];
                         $socket = $this->getSocket($uri);
@@ -271,7 +271,7 @@ final class BasicResolver implements Resolver
                             continue;
                         }
 
-                        throw new ResolutionException("Server returned a truncated response for '{$name}' (" . Record::getName($type) . ")");
+                        throw new DnsException("Server returned a truncated response for '{$name}' (" . Record::getName($type) . ")");
                     }
 
                     $answers = $response->getAnswerRecords();
@@ -383,7 +383,7 @@ final class BasicResolver implements Resolver
         return self::CACHE_PREFIX . $name . "#" . $type;
     }
 
-    /** @throws ResolutionException */
+    /** @throws DnsException */
     private function decodeCachedResult(string $name, string $type, string $encoded): array
     {
         $decoded = \json_decode($encoded, true);
@@ -393,7 +393,7 @@ final class BasicResolver implements Resolver
         }
 
         if (!$decoded) {
-            throw new ResolutionException("Corrupt cache data returned for {$name}");
+            throw new DnsException("Corrupt cache data returned for {$name}");
         }
 
         $result = [];
@@ -422,12 +422,12 @@ final class BasicResolver implements Resolver
         return $name;
     }
 
-    /** @throws ResolutionException */
-    private function getSocket(string $uri): Socket
+    /** @throws DnsException */
+    private function getSocket(string $uri): Transport
     {
         // We use a new socket for each UDP request, as that increases the entropy and mitigates response forgery.
         if (\substr($uri, 0, 3) === "udp") {
-            return UdpSocket::connect($uri);
+            return UdpTransport::connect($uri);
         }
 
         // Over TCP we might reuse sockets if the server allows to keep them open. Sequence IDs in TCP are already
@@ -442,7 +442,7 @@ final class BasicResolver implements Resolver
 
         $pendingSocket = Task::async(function () use ($uri) {
             try {
-                $socket = TcpSocket::connect($uri);
+                $socket = TcpTransport::connect($uri);
                 $this->sockets[$uri] = $socket;
 
                 return $socket;
@@ -459,7 +459,7 @@ final class BasicResolver implements Resolver
     private function assertAcceptableResponse(Message $response): void
     {
         if ($response->getResponseCode() !== 0) {
-            throw new ResolutionException(\sprintf("Server returned error code: %d", $response->getResponseCode()));
+            throw new DnsException(\sprintf("Server returned error code: %d", $response->getResponseCode()));
         }
     }
 }

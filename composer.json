@@ -36,21 +36,19 @@
         }
     ],
     "require": {
-        "php": ">=7.2",
+        "php": ">=7.3",
+        "ext-async": "*",
         "ext-filter": "*",
         "amphp/amp": "dev-ext-async",
         "amphp/byte-stream": "dev-ext-async",
         "amphp/cache": "dev-ext-async",
-        "amphp/file": "dev-ext-async",
         "amphp/parser": "^1",
-        "amphp/uri": "^0.1",
         "amphp/windows-registry": "dev-ext-async",
-        "daverandom/libdns": "^2.0.1"
+        "daverandom/libdns": "^2.0.1",
+        "league/uri-parser": "^1.4"
     },
     "require-dev": {
-        "amphp/phpunit-util": "dev-ext-async",
-        "phpunit/phpunit": "^6",
-        "friendsofphp/php-cs-fixer": "^2.3"
+        "phpunit/phpunit": "^7"
     },
     "autoload": {
         "psr-4": {
@@ -67,7 +65,7 @@
     },
     "config": {
         "platform": {
-            "php": "7.2.0"
+            "php": "7.3.0"
         }
     }
 }

@@ -9,7 +9,7 @@ use LibDNS\Records\QuestionFactory;
 
 abstract class SocketTest extends TestCase
 {
-    abstract protected function connect(): Dns\Internal\Socket;
+    abstract protected function connect(): Dns\Internal\Transport;
 
     public function testAsk(): void
     {
@@ -27,7 +27,7 @@ abstract class SocketTest extends TestCase
         $question = (new QuestionFactory)->create(Dns\Record::A);
         $question->setName("google.com");
 
-        /** @var Dns\Internal\Socket $socket */
+        /** @var Dns\Internal\Transport $socket */
         $socket = $this->connect();
 
         $this->assertLessThan(time() + 1, $socket->getLastActivity());

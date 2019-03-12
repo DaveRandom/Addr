@@ -22,12 +22,12 @@ final class WindowsConfigLoader implements ConfigLoader
             "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DhcpNameServer",
         ];
 
-        $reader = new WindowsRegistry;
+        $registry = new WindowsRegistry;
         $nameserver = "";
 
         while ($nameserver === "" && ($key = \array_shift($keys))) {
             try {
-                $nameserver = $reader->read($key);
+                $nameserver = $registry->read($key);
             } catch (MissingKeyException $e) {
                 // retry other possible locations
             } catch (QueryException $e) {
@@ -39,7 +39,7 @@ final class WindowsConfigLoader implements ConfigLoader
             $interfaces = "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces";
 
             try {
-                $subKeys = $reader->listKeys($interfaces);
+                $subKeys = $registry->listKeys($interfaces);
             } catch (QueryException $e) {
                 throw new ConfigException("Error while querying the Windows Registry", $e);
             }
@@ -47,7 +47,7 @@ final class WindowsConfigLoader implements ConfigLoader
             foreach ($subKeys as $key) {
                 foreach (["NameServer", "DhcpNameServer"] as $property) {
                     try {
-                        $nameserver = $reader->read("{$key}\\{$property}");
+                        $nameserver = $registry->read("{$key}\\{$property}");
 
                         if ($nameserver !== "") {
                             break 2;

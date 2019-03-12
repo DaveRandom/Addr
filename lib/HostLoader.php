@@ -26,9 +26,8 @@ class HostLoader
     {
         $data = [];
 
-        try {
-            $contents = File\get($this->path);
-        } catch (File\FilesystemException $e) {
+        $contents = @\file_get_contents($this->path);
+        if ($contents === false) {
             return [];
         }
 

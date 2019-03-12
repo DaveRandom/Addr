@@ -2,9 +2,6 @@
 
 namespace Amp\Dns;
 
-use Amp\File;
-use Amp\File\FilesystemException;
-
 final class UnixConfigLoader implements ConfigLoader
 {
     private $path;
@@ -23,53 +20,53 @@ final class UnixConfigLoader implements ConfigLoader
         $timeout = 3000;
         $attempts = 2;
 
-        try {
-            $fileContent = File\get($path);
-            $lines = \explode("\n", $fileContent);
+        $fileContent = @\file_get_contents($path);
+        if ($fileContent === false) {
+            throw new ConfigException("Could not read configuration file ({$path}): " . \error_get_last()["message"]);
+        }
 
-            foreach ($lines as $line) {
-                $line = \preg_split('#\s+#', $line, 2);
+        $lines = \explode("\n", $fileContent);
 
-                if (\count($line) !== 2) {
+        foreach ($lines as $line) {
+            $line = \preg_split('#\s+#', $line, 2);
+
+            if (\count($line) !== 2) {
+                continue;
+            }
+
+            [$type, $value] = $line;
+
+            if ($type === "nameserver") {
+                $value = \trim($value);
+                $ip = @\inet_pton($value);
+
+                if ($ip === false) {
                     continue;
                 }
 
-                [$type, $value] = $line;
+                if (isset($ip[15])) { // IPv6
+                    $nameservers[] = "[{$value}]:53";
+                } else { // IPv4
+                    $nameservers[] = "{$value}:53";
+                }
+            } elseif ($type === "options") {
+                $optline = \preg_split('#\s+#', $value, 2);
 
-                if ($type === "nameserver") {
-                    $value = \trim($value);
-                    $ip = @\inet_pton($value);
+                if (\count($optline) !== 2) {
+                    continue;
+                }
 
-                    if ($ip === false) {
-                        continue;
-                    }
+                [$option, $value] = $optline;
 
-                    if (isset($ip[15])) { // IPv6
-                        $nameservers[] = "[{$value}]:53";
-                    } else { // IPv4
-                        $nameservers[] = "{$value}:53";
-                    }
-                } elseif ($type === "options") {
-                    $optline = \preg_split('#\s+#', $value, 2);
+                switch ($option) {
+                    case "timeout":
+                        $timeout = (int) $value;
+                        break;
 
-                    if (\count($optline) !== 2) {
-                        continue;
-                    }
-
-                    [$option, $value] = $optline;
-
-                    switch ($option) {
-                        case "timeout":
-                            $timeout = (int) $value;
-                            break;
-
-                        case "attempts":
-                            $attempts = (int) $value;
-                    }
+                    case "attempts":
+                        $attempts = (int) $value;
                 }
             }
-        } catch (FilesystemException $e) {
-            throw new ConfigException("Could not read configuration file ({$path})", $e);
         }
 
         $hosts = $this->hostLoader->loadHosts();

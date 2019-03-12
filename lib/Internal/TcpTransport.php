@@ -3,20 +3,17 @@
 namespace Amp\Dns\Internal;
 
 use Amp;
-use Amp\Dns\ResolutionException;
-use Amp\Dns\TimeoutException;
-use Amp\Loop;
+use Amp\Dns\DnsException;
 use Amp\Parser\Parser;
-use Concurrent\Deferred;
-use Concurrent\Task;
+use Concurrent\Network\TcpSocket;
 use LibDNS\Decoder\DecoderFactory;
 use LibDNS\Encoder\Encoder;
 use LibDNS\Encoder\EncoderFactory;
 use LibDNS\Messages\Message;
-use function Amp\timeout;
+use function League\Uri\parse;
 
 /** @internal */
-class TcpSocket extends Socket
+class TcpTransport extends Transport
 {
     /** @var Encoder */
     private $encoder;
@@ -30,32 +27,17 @@ class TcpSocket extends Socket
     /** @var bool */
     private $isAlive = true;
 
-    public static function connect(string $uri, int $timeout = 5000): Socket
+    /** @var TcpSocket */
+    private $socket;
+
+    public static function createFromUri(string $uri, int $timeout = 5000): Transport
     {
-        if (!$socket = @\stream_socket_client($uri, $errno, $errstr, 0, STREAM_CLIENT_ASYNC_CONNECT)) {
-            throw new ResolutionException(\sprintf(
-                "Connection to %s failed: [Error #%d] %s",
-                $uri,
-                $errno,
-                $errstr
-            ));
+        $parsedUri = parse($uri);
+        if ($parsedUri['scheme'] !== 'tcp') {
+            throw new DnsException(self::class . " does not support the '{$parsedUri['scheme']}' scheme");
         }
 
-        \stream_set_blocking($socket, false);
-
-        $deferred = new Deferred;
-
-        $watcher = Loop::onWritable($socket, static function () use ($socket, $deferred) {
-            $deferred->resolve(new self($socket));
-        });
-
-        try {
-            return Task::await(timeout($deferred->awaitable(), $timeout));
-        } catch (Amp\TimeoutException $e) {
-            throw new TimeoutException("Name resolution timed out, could not connect to server at $uri");
-        } finally {
-            Loop::cancel($watcher);
-        }
+        return new self($parsedUri['host'], $parsedUri['port'], $timeout);
     }
 
     public static function parser(callable $callback): \Generator
@@ -71,10 +53,11 @@ class TcpSocket extends Socket
         }
     }
 
-    protected function __construct($socket)
+    protected function __construct(string $remoteAddress, int $remotePort, int $timeout)
     {
-        parent::__construct($socket);
+        parent::__construct();
 
+        $this->socket = TcpSocket::connect($remoteAddress, $remotePort);
         $this->encoder = (new EncoderFactory)->create();
         $this->queue = new \SplQueue;
         $this->parser = new Parser(self::parser([$this->queue, 'push']));
@@ -100,7 +83,7 @@ class TcpSocket extends Socket
 
             if ($chunk === null) {
                 $this->isAlive = false;
-                throw new ResolutionException("Reading from the server failed");
+                throw new DnsException("Reading from the server failed");
             }
 
             $this->parser->push($chunk);
@@ -112,5 +95,28 @@ class TcpSocket extends Socket
     public function isAlive(): bool
     {
         return $this->isAlive;
+    }
+
+    public function close(): void
+    {
+        // TODO: Implement close() method.
+    }
+
+    /**
+     * @throws DnsException
+     */
+    protected function read(): ?string
+    {
+        // TODO: Implement read() method.
+    }
+
+    /**
+     * @param string $data
+     *
+     * @throws DnsException
+     */
+    protected function write(string $data): void
+    {
+        // TODO: Implement write() method.
     }
 }

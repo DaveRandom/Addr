@@ -62,12 +62,12 @@ final class Config
 
             $port = $port === "" ? 53 : \substr($port, 1);
         } else { // IPv4
-            $arr = \explode(":", $nameserver, 2);
+            $nameserverParts = \explode(":", $nameserver, 2);
 
-            if (\count($arr) === 2) {
-                list($addr, $port) = $arr;
+            if (\count($nameserverParts) === 2) {
+                [$addr, $port] = $nameserverParts;
             } else {
-                $addr = $arr[0];
+                $addr = $nameserverParts[0];
                 $port = 53;
             }
         }

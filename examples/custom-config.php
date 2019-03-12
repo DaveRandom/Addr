@@ -19,12 +19,12 @@ $customConfigLoader = new class implements Dns\ConfigLoader
     }
 };
 
-Dns\resolver(new Dns\BasicResolver(null, $customConfigLoader));
+Dns\resolver(new Dns\Rfc1035Resolver(null, $customConfigLoader));
 
 $hostname = "amphp.org";
 
 try {
     pretty_print_records($hostname, Dns\resolve($hostname));
-} catch (Dns\ResolutionException $e) {
+} catch (Dns\DnsException $e) {
     pretty_print_error($hostname, $e);
 }

@@ -2,8 +2,6 @@
 
 namespace Amp\Dns;
 
-use Amp\Loop;
-
 const LOOP_STATE_IDENTIFIER = Resolver::class;
 
 /**
@@ -13,7 +11,8 @@ const LOOP_STATE_IDENTIFIER = Resolver::class;
  *
  * @return \Amp\Dns\Resolver Returns the application-wide dns resolver instance
  */
-function resolver(Resolver $resolver = null): Resolver {
+function resolver(Resolver $resolver = null): Resolver
+{
     if ($resolver === null) {
         $resolver = Loop::getState(LOOP_STATE_IDENTIFIER);
 
@@ -34,8 +33,9 @@ function resolver(Resolver $resolver = null): Resolver {
  *
  * @return \Amp\Dns\Resolver
  */
-function driver(): Resolver {
-    return new BasicResolver;
+function driver(): Resolver
+{
+    return new Rfc1035Resolver;
 }
 
 /**
@@ -48,11 +48,12 @@ function driver(): Resolver {
  *
  * @return Record[]
  *
- * @throws ResolutionException
+ * @throws DnsException
  *
  * @see Resolver::resolve()
  */
-function resolve(string $name, int $typeRestriction = null): array {
+function resolve(string $name, int $typeRestriction = null): array
+{
     return resolver()->resolve($name, $typeRestriction);
 }
 
@@ -64,10 +65,63 @@ function resolve(string $name, int $typeRestriction = null): array {
  *
  * @return Record[]
  *
- * @throws ResolutionException
+ * @throws DnsException
  *
  * @see Resolver::query()
  */
-function query(string $name, int $type): array {
+function query(string $name, int $type): array
+{
     return resolver()->query($name, $type);
+}
+
+/**
+ * Checks whether a string is a valid DNS name.
+ *
+ * @param string $name String to check.
+ *
+ * @return bool
+ */
+function isValidDnsName(string $name): bool
+{
+    try {
+        normalizeDnsName($name);
+        return true;
+    } catch (InvalidDnsNameException $e) {
+        return false;
+    }
+}
+
+/**
+ * Normalizes a DNS name and automatically checks it for validity.
+ *
+ * @param string $name DNS name.
+ *
+ * @return string Normalized DNS name.
+ *
+ * @throws InvalidDnsNameException If an invalid name or an IDN name without ext/intl being installed has been passed.
+ */
+function normalizeDnsName(string $name): string
+{
+    static $pattern = '/^(?<name>[a-z0-9]([a-z0-9-_]{0,61}[a-z0-9])?)(\.(?&name))*$/i';
+
+    if (\defined('INTL_IDNA_VARIANT_UTS46') && \function_exists('idn_to_ascii')) {
+        if (false === $result = \idn_to_ascii($name, 0, \INTL_IDNA_VARIANT_UTS46)) {
+            throw new InvalidDnsNameException("Name '{$name}' could not be processed for IDN.");
+        }
+
+        $name = $result;
+    } else {
+        if (\preg_match('/[\x80-\xff]/', $name)) {
+            throw new InvalidDnsNameException(
+                "Name '{$name}' contains non-ASCII characters and IDN support is not available. " .
+                "Verify that ext/intl is installed for IDN support and that ICU is at least version 4.6."
+            );
+        }
+    }
+
+    if (isset($name[253]) || !\preg_match($pattern, $name)) {
+        throw new InvalidDnsNameException("Name '{$name}' is not a valid hostname.");
+    }
+
+    return $name;
 }

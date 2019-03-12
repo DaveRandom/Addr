@@ -104,6 +104,7 @@ final class Record
         }
 
         if ($types === null) {
+            /** @noinspection PhpUnhandledExceptionInspection */
             $types = \array_flip((new \ReflectionClass(self::class))->getConstants());
         }
 
